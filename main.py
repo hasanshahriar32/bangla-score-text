@@ -5,6 +5,7 @@ Provides text similarity scoring and plagiarism detection with webhook integrati
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, HTMLResponse
 from typing import List
 import logging
 import os
@@ -117,6 +118,41 @@ async def health_check():
         redis_status=redis_status,
         celery_status=celery_status
     )
+
+@app.get("/flower")
+async def flower_dashboard():
+    """Provide access to Flower monitoring dashboard"""
+    # Return an HTML page that redirects to Flower or embeds it
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Flower Dashboard - Queue Monitor</title>
+        <style>
+            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+            .header { background: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+            iframe { width: 100%; height: 80vh; border: 1px solid #ddd; border-radius: 5px; }
+            .info { background: #e3f2fd; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h2>🌸 Flower Dashboard - Redis & Queue Monitor</h2>
+            <p>Monitor Celery workers, Redis connections, and task queues</p>
+        </div>
+        <div class="info">
+            <strong>Direct Access:</strong> <a href="http://localhost:5555" target="_blank">http://localhost:5555</a>
+        </div>
+        <iframe src="http://localhost:5555" frameborder="0"></iframe>
+        <script>
+            // Refresh iframe every 30 seconds to keep data fresh
+            setInterval(function() {
+                document.querySelector('iframe').src = document.querySelector('iframe').src;
+            }, 30000);
+        </script>
+    </body>
+    </html>
+    """)
 
 @app.post("/detect-plagiarism", response_model=QueuedTaskResponse)
 async def queue_plagiarism_detection(request: PlagiarismRequest):

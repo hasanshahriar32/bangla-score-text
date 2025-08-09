@@ -22,11 +22,11 @@ args = "Redis Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Flower Monitor"
+args = "Celery Worker"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Celery Worker"
+args = "Flower Monitor"
 
 [[workflows.workflow]]
 name = "Plagiarism Detection API"
@@ -50,6 +50,17 @@ waitForPort = 6379
 outputType = "console"
 
 [[workflows.workflow]]
+name = "Celery Worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "celery -A celery_app worker --loglevel=info --concurrency=2 -Q celery,plagiarism,similarity"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
 name = "Flower Monitor"
 author = "agent"
 
@@ -57,14 +68,6 @@ author = "agent"
 task = "shell.exec"
 args = "celery -A celery_app flower --port=5555 --address=0.0.0.0"
 waitForPort = 5555
-
-[[workflows.workflow]]
-name = "Celery Worker"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "celery -A celery_app worker --loglevel=info --concurrency=2 -Q celery,plagiarism,similarity"
 
 [workflows.workflow.metadata]
 outputType = "console"
