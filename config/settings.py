@@ -107,12 +107,16 @@ class Settings:
         }
     
     def get_redis_config(self) -> dict:
-        """Get Redis configuration"""
+        """Get Redis configuration prioritizing URL over individual parameters"""
+        # Always prioritize the complete Redis URL if available
+        if self.redis_url and self.redis_url != "redis://localhost:6379/0":
+            return {"url": self.redis_url}
+        
+        # Fallback to individual parameters only if URL is default localhost
         config = {
             "host": self.redis_host,
             "port": self.redis_port,
-            "db": self.redis_db,
-            "url": self.redis_url
+            "db": self.redis_db
         }
         
         if self.redis_password:
