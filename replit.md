@@ -8,6 +8,26 @@ A FastAPI-based plagiarism detection system specifically designed for Bangla lan
 
 Preferred communication style: Simple, everyday language.
 
+## Production Deployment
+
+### Environment Variables
+The system requires these environment variables to be configured:
+
+**Required:**
+- `REDIS_URL` - Complete Redis connection string for queue and result storage
+- `WEBHOOK_SECRET` - Secret key for securing webhook deliveries (optional)
+
+**Optional Configuration:**
+- `CELERY_WORKER_CONCURRENCY` - Number of concurrent workers (default: 2)
+- `DEFAULT_THRESHOLD` - Default plagiarism threshold (default: 0.7)
+- `MAX_TEXT_LENGTH` - Maximum text length limit (default: 50000)
+
+### Queue System Architecture
+- Redis serves as both message broker and result backend
+- Celery handles distributed task processing
+- Flower provides web-based queue monitoring
+- Tasks are routed to specialized queues (plagiarism, similarity)
+
 ## System Architecture
 
 ### API Layer

@@ -3,16 +3,17 @@ Celery configuration for asynchronous task processing
 """
 
 from celery import Celery
-import os
+from config.settings import Settings
 
-# Configure Redis URL
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Load settings
+settings = Settings()
+celery_config = settings.get_celery_config()
 
 # Create Celery instance
 celery_app = Celery(
     "plagiarism_detection",
-    broker=redis_url,
-    backend=redis_url,
+    broker=celery_config["broker_url"],
+    backend=celery_config["result_backend"],
     include=["tasks.plagiarism_tasks"]
 )
 
@@ -31,13 +32,14 @@ celery_app.conf.update(
         "tasks.plagiarism_tasks.process_batch_similarity": {"queue": "similarity"}
     },
     
-    # Worker settings
+    # Worker settings from configuration
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     worker_max_tasks_per_child=1000,
+    task_time_limit=celery_config["task_time_limit"],
     
-    # Result backend settings
-    result_expires=3600,  # 1 hour
+    # Result backend settings from configuration
+    result_expires=celery_config["result_expires"],
     
     # Monitoring
     worker_send_task_events=True,

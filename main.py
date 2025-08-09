@@ -56,8 +56,8 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-            redis_client = redis.from_url(redis_url)
+            redis_config = settings.get_redis_config()
+            redis_client = redis.from_url(redis_config["url"])
             redis_client.ping()  # Test connection
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}")
@@ -81,7 +81,9 @@ async def root():
     return HealthResponse(
         status="healthy",
         message="Bangla Plagiarism Detection API is running",
-        version="1.0.0"
+        version="1.0.0",
+        redis_status="unknown",
+        celery_status="unknown"
     )
 
 @app.get("/health", response_model=HealthResponse)
@@ -192,7 +194,7 @@ async def detect_plagiarism_sync(
             target_text=request.target_text,
             candidate_texts=request.candidate_texts,
             threshold=request.threshold,
-            include_preprocessing=request.include_preprocessing
+            include_preprocessing=request.include_preprocessing or True
         )
         
         # Add webhook call to background tasks if webhook URL is provided
@@ -285,7 +287,7 @@ async def batch_similarity_sync(request: PlagiarismRequest):
         similarities = await plagiarism_detector.calculate_similarities(
             target_text=request.target_text,
             candidate_texts=request.candidate_texts,
-            include_preprocessing=request.include_preprocessing
+            include_preprocessing=request.include_preprocessing or True
         )
         
         logger.info(f"Batch similarity calculation completed for {len(similarities)} texts")

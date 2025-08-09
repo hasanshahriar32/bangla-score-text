@@ -52,6 +52,25 @@ class Settings:
         self.enable_preprocessing: bool = os.getenv("ENABLE_PREPROCESSING", "true").lower() == "true"
         self.batch_size: int = int(os.getenv("BATCH_SIZE", "32"))
         
+        # Redis & Queue Configuration
+        self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self.redis_host: str = os.getenv("REDIS_HOST", "localhost")
+        self.redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
+        self.redis_db: int = int(os.getenv("REDIS_DB", "0"))
+        self.redis_password: Optional[str] = os.getenv("REDIS_PASSWORD")
+        
+        # Celery Configuration
+        self.celery_broker_url: str = os.getenv("CELERY_BROKER_URL", self.redis_url)
+        self.celery_result_backend: str = os.getenv("CELERY_RESULT_BACKEND", self.redis_url)
+        self.celery_worker_concurrency: int = int(os.getenv("CELERY_WORKER_CONCURRENCY", "2"))
+        self.celery_task_time_limit: int = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))  # 5 minutes
+        self.celery_result_expires: int = int(os.getenv("CELERY_RESULT_EXPIRES", "3600"))  # 1 hour
+        
+        # Flower Monitoring Configuration
+        self.flower_port: int = int(os.getenv("FLOWER_PORT", "5555"))
+        self.flower_address: str = os.getenv("FLOWER_ADDRESS", "0.0.0.0")
+        self.flower_basic_auth: Optional[str] = os.getenv("FLOWER_BASIC_AUTH")  # user:password format
+        
         # Security Configuration
         self.cors_origins: list = os.getenv("CORS_ORIGINS", "*").split(",")
         self.api_key: Optional[str] = os.getenv("API_KEY")
@@ -87,6 +106,42 @@ class Settings:
             "debug": self.debug
         }
     
+    def get_redis_config(self) -> dict:
+        """Get Redis configuration"""
+        config = {
+            "host": self.redis_host,
+            "port": self.redis_port,
+            "db": self.redis_db,
+            "url": self.redis_url
+        }
+        
+        if self.redis_password:
+            config["password"] = self.redis_password
+            
+        return config
+    
+    def get_celery_config(self) -> dict:
+        """Get Celery configuration"""
+        return {
+            "broker_url": self.celery_broker_url,
+            "result_backend": self.celery_result_backend,
+            "worker_concurrency": self.celery_worker_concurrency,
+            "task_time_limit": self.celery_task_time_limit,
+            "result_expires": self.celery_result_expires
+        }
+    
+    def get_flower_config(self) -> dict:
+        """Get Flower monitoring configuration"""
+        config = {
+            "port": self.flower_port,
+            "address": self.flower_address
+        }
+        
+        if self.flower_basic_auth:
+            config["basic_auth"] = self.flower_basic_auth
+            
+        return config
+
     def get_plagiarism_config(self) -> dict:
         """Get plagiarism detection configuration"""
         return {
