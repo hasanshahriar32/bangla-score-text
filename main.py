@@ -10,10 +10,16 @@ import logging
 import os
 
 from schemas.request_models import PlagiarismRequest, WebhookConfig
-from schemas.response_models import PlagiarismResponse, SimilarityResult, HealthResponse
+from schemas.response_models import (
+    PlagiarismResponse, SimilarityResult, HealthResponse, 
+    QueuedTaskResponse, TaskStatusResponse
+)
 from models.plagiarism_detector import PlagiarismDetector
 from services.webhook_service import WebhookService
 from config.settings import Settings
+from celery_app import celery_app
+from tasks.plagiarism_tasks import process_plagiarism_detection, process_batch_similarity
+import redis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +48,22 @@ settings = Settings()
 plagiarism_detector = PlagiarismDetector()
 webhook_service = WebhookService()
 
+# Redis connection for health checks
+redis_client = None
+
+def get_redis_client():
+    """Get Redis client instance"""
+    global redis_client
+    if redis_client is None:
+        try:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            redis_client = redis.from_url(redis_url)
+            redis_client.ping()  # Test connection
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}")
+            redis_client = None
+    return redis_client
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize ML model on startup"""
@@ -66,19 +88,87 @@ async def root():
 async def health_check():
     """Detailed health check with model status"""
     model_status = "loaded" if plagiarism_detector.is_initialized else "not_loaded"
+    
+    # Check Redis connection
+    redis_status = "disconnected"
+    try:
+        client = get_redis_client()
+        if client:
+            client.ping()
+            redis_status = "connected"
+    except Exception:
+        redis_status = "disconnected"
+    
+    # Check Celery worker status
+    celery_status = "unknown"
+    try:
+        inspect = celery_app.control.inspect()
+        active_workers = inspect.active()
+        celery_status = "active" if active_workers else "inactive"
+    except Exception:
+        celery_status = "unavailable"
+    
     return HealthResponse(
         status="healthy",
         message=f"API is running, ML model status: {model_status}",
-        version="1.0.0"
+        version="1.0.0",
+        redis_status=redis_status,
+        celery_status=celery_status
     )
 
-@app.post("/detect-plagiarism", response_model=PlagiarismResponse)
-async def detect_plagiarism(
+@app.post("/detect-plagiarism", response_model=QueuedTaskResponse)
+async def queue_plagiarism_detection(request: PlagiarismRequest):
+    """
+    Queue plagiarism detection task for processing
+    
+    Args:
+        request: PlagiarismRequest containing target text and candidate texts
+    
+    Returns:
+        QueuedTaskResponse with task ID and status
+    """
+    try:
+        logger.info(f"Queueing plagiarism detection for target text length: {len(request.target_text)}")
+        
+        # Validate input
+        if not request.target_text.strip():
+            raise HTTPException(status_code=400, detail="Target text cannot be empty")
+        
+        if not request.candidate_texts:
+            raise HTTPException(status_code=400, detail="Candidate texts array cannot be empty")
+        
+        # Prepare task data
+        task_data = {
+            "request_data": request.dict(exclude={"webhook_url", "webhook_secret"}),
+            "webhook_url": request.webhook_url,
+            "webhook_secret": request.webhook_secret
+        }
+        
+        # Queue the task
+        task = process_plagiarism_detection.apply_async(args=[task_data])
+        
+        logger.info(f"Plagiarism detection task queued with ID: {task.id}")
+        
+        return QueuedTaskResponse(
+            task_id=task.id,
+            status="queued",
+            message="Plagiarism detection task queued successfully. Check task status or wait for webhook notification.",
+            estimated_completion_time="30-120 seconds"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error queueing plagiarism detection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue task: {str(e)}")
+
+@app.post("/detect-plagiarism-sync", response_model=PlagiarismResponse)
+async def detect_plagiarism_sync(
     request: PlagiarismRequest,
     background_tasks: BackgroundTasks
 ):
     """
-    Detect plagiarism by comparing target text with candidate texts
+    Detect plagiarism synchronously (for smaller texts, legacy endpoint)
     
     Args:
         request: PlagiarismRequest containing target text and candidate texts
@@ -88,7 +178,7 @@ async def detect_plagiarism(
         PlagiarismResponse with similarity scores and plagiarism analysis
     """
     try:
-        logger.info(f"Processing plagiarism detection request for target text length: {len(request.target_text)}")
+        logger.info(f"Processing synchronous plagiarism detection for target text length: {len(request.target_text)}")
         
         # Validate input
         if not request.target_text.strip():
@@ -124,13 +214,56 @@ async def detect_plagiarism(
         logger.error(f"Error in plagiarism detection: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.post("/batch-similarity", response_model=List[SimilarityResult])
-async def batch_similarity(
-    request: PlagiarismRequest
-):
+@app.post("/batch-similarity", response_model=QueuedTaskResponse)
+async def queue_batch_similarity(request: PlagiarismRequest):
     """
-    Calculate similarity scores without plagiarism analysis
-    Useful for getting raw similarity metrics
+    Queue batch similarity calculation task
+    
+    Args:
+        request: PlagiarismRequest containing target text and candidate texts
+    
+    Returns:
+        QueuedTaskResponse with task ID and status
+    """
+    try:
+        logger.info(f"Queueing batch similarity for {len(request.candidate_texts)} candidates")
+        
+        # Validate input
+        if not request.target_text.strip():
+            raise HTTPException(status_code=400, detail="Target text cannot be empty")
+        
+        if not request.candidate_texts:
+            raise HTTPException(status_code=400, detail="Candidate texts array cannot be empty")
+        
+        # Prepare task data
+        task_data = {
+            "request_data": request.dict(exclude={"webhook_url", "webhook_secret"}),
+            "webhook_url": request.webhook_url,
+            "webhook_secret": request.webhook_secret
+        }
+        
+        # Queue the task
+        task = process_batch_similarity.apply_async(args=[task_data])
+        
+        logger.info(f"Batch similarity task queued with ID: {task.id}")
+        
+        return QueuedTaskResponse(
+            task_id=task.id,
+            status="queued", 
+            message="Batch similarity task queued successfully. Check task status or wait for webhook notification.",
+            estimated_completion_time="15-60 seconds"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error queueing batch similarity: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue task: {str(e)}")
+
+@app.post("/batch-similarity-sync", response_model=List[SimilarityResult])
+async def batch_similarity_sync(request: PlagiarismRequest):
+    """
+    Calculate similarity scores synchronously (for smaller datasets, legacy endpoint)
     
     Args:
         request: PlagiarismRequest containing target text and candidate texts
@@ -139,7 +272,7 @@ async def batch_similarity(
         List of SimilarityResult with detailed similarity metrics
     """
     try:
-        logger.info(f"Processing batch similarity request for {len(request.candidate_texts)} candidates")
+        logger.info(f"Processing synchronous batch similarity for {len(request.candidate_texts)} candidates")
         
         # Validate input
         if not request.target_text.strip():
@@ -198,6 +331,119 @@ async def configure_webhook(webhook_config: WebhookConfig):
     except Exception as e:
         logger.error(f"Error configuring webhook: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to configure webhook: {str(e)}")
+
+@app.get("/task/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    """
+    Get the status of a queued task
+    
+    Args:
+        task_id: The task identifier
+        
+    Returns:
+        TaskStatusResponse with current task status and progress
+    """
+    try:
+        # Get task result from Celery
+        task_result = celery_app.AsyncResult(task_id)
+        
+        if task_result.state == "PENDING":
+            return TaskStatusResponse(
+                task_id=task_id,
+                status="PENDING",
+                message="Task is waiting to be processed"
+            )
+        elif task_result.state == "PROCESSING":
+            meta = task_result.info or {}
+            return TaskStatusResponse(
+                task_id=task_id,
+                status="PROCESSING",
+                progress=meta.get("progress", 0),
+                message=meta.get("status", "Processing"),
+                started_at=meta.get("started_at")
+            )
+        elif task_result.state == "SUCCESS":
+            meta = task_result.info or {}
+            return TaskStatusResponse(
+                task_id=task_id,
+                status="SUCCESS",
+                progress=100,
+                message="Task completed successfully",
+                result=meta.get("result"),
+                started_at=meta.get("started_at"),
+                completed_at=meta.get("completed_at")
+            )
+        elif task_result.state == "FAILURE":
+            meta = task_result.info or {}
+            return TaskStatusResponse(
+                task_id=task_id,
+                status="FAILURE",
+                message="Task failed",
+                error=meta.get("error", str(task_result.info)),
+                started_at=meta.get("started_at"),
+                completed_at=meta.get("failed_at")
+            )
+        else:
+            return TaskStatusResponse(
+                task_id=task_id,
+                status=task_result.state,
+                message=f"Task status: {task_result.state}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error getting task status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get task status: {str(e)}")
+
+@app.get("/queue/stats")
+async def get_queue_stats():
+    """
+    Get queue statistics and worker information
+    
+    Returns:
+        Dictionary with queue and worker statistics
+    """
+    try:
+        inspect = celery_app.control.inspect()
+        
+        # Get active tasks
+        active_tasks = inspect.active() or {}
+        
+        # Get worker stats
+        stats = inspect.stats() or {}
+        
+        # Count total active tasks
+        total_active = sum(len(tasks) for tasks in active_tasks.values())
+        
+        # Get queue lengths (requires Redis connection)
+        queue_lengths = {}
+        try:
+            client = get_redis_client()
+            if client:
+                queue_lengths = {
+                    "plagiarism": client.llen("plagiarism"),
+                    "similarity": client.llen("similarity"),
+                    "default": client.llen("celery")
+                }
+        except Exception:
+            queue_lengths = {"error": "Unable to connect to Redis"}
+        
+        return {
+            "active_tasks": total_active,
+            "workers": list(stats.keys()),
+            "worker_count": len(stats),
+            "queue_lengths": queue_lengths,
+            "active_tasks_by_worker": active_tasks,
+            "worker_stats": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting queue stats: {str(e)}")
+        return {
+            "error": f"Failed to get queue stats: {str(e)}",
+            "active_tasks": 0,
+            "workers": [],
+            "worker_count": 0
+        }
 
 if __name__ == "__main__":
     import uvicorn

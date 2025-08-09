@@ -2,7 +2,7 @@
 
 ## Overview
 
-A FastAPI-based plagiarism detection system specifically designed for Bangla language text processing. The system uses multilingual machine learning models to calculate text similarity scores and detect potential plagiarism between a target text and multiple candidate texts. Features include configurable similarity thresholds, text preprocessing optimized for Bangla language, and webhook integration for asynchronous result delivery.
+A FastAPI-based plagiarism detection system specifically designed for Bangla language text processing with advanced queue-based processing. The system uses multilingual machine learning models to calculate text similarity scores and detect potential plagiarism between a target text and multiple candidate texts. Features include configurable similarity thresholds, text preprocessing optimized for Bangla language, webhook integration for asynchronous result delivery, and a complete Celery-Redis queue system for handling longer processing tasks.
 
 ## User Preferences
 
@@ -35,7 +35,12 @@ Preferred communication style: Simple, everyday language.
 - **Threshold Settings**: Adjustable plagiarism detection sensitivity
 - **Performance Limits**: Configurable text length and candidate count limits
 
-### Background Processing
+### Background Processing & Queue System
+- **Celery Integration**: Distributed task queue using Redis as message broker
+- **Redis Backend**: Fast in-memory result storage and queue management
+- **Task Monitoring**: Flower web interface for real-time queue visualization
+- **Queue Routing**: Dedicated queues for plagiarism detection and batch similarity
+- **Progress Tracking**: Real-time task status updates with progress indicators
 - **Webhook Service**: Asynchronous result delivery to external endpoints
 - **Retry Mechanism**: Configurable retry logic for failed webhook deliveries
 - **Authentication**: HMAC-based webhook security with secret validation
@@ -56,10 +61,13 @@ The application follows a layered architecture pattern:
 - **scikit-learn**: Cosine similarity computation and ML utilities
 - **numpy**: Numerical operations and array processing
 
-### Web Framework
+### Web Framework & Queue System
 - **FastAPI**: Modern async web framework with automatic API documentation
 - **uvicorn**: ASGI server for production deployment
 - **aiohttp**: Async HTTP client for webhook delivery
+- **Celery**: Distributed task queue for background processing
+- **Redis**: Message broker and result backend for queue system
+- **Flower**: Web-based monitoring tool for Celery tasks
 
 ### Data Validation
 - **Pydantic**: Runtime type checking and data validation

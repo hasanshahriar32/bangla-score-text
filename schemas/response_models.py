@@ -195,6 +195,99 @@ class PlagiarismResponse(BaseModel):
             }
         }
 
+class QueuedTaskResponse(BaseModel):
+    """Response for queued task submission"""
+    
+    task_id: str = Field(
+        ...,
+        description="Unique task identifier"
+    )
+    
+    status: str = Field(
+        ...,
+        description="Task status"
+    )
+    
+    message: str = Field(
+        ...,
+        description="Status message"
+    )
+    
+    estimated_completion_time: Optional[str] = Field(
+        None,
+        description="Estimated completion time in seconds"
+    )
+    
+    queue_position: Optional[int] = Field(
+        None,
+        description="Position in the processing queue"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": "abc123-def456-ghi789",
+                "status": "queued",
+                "message": "Task queued successfully for processing",
+                "estimated_completion_time": "30-60 seconds",
+                "queue_position": 2
+            }
+        }
+
+class TaskStatusResponse(BaseModel):
+    """Response for task status check"""
+    
+    task_id: str = Field(
+        ...,
+        description="Task identifier"
+    )
+    
+    status: str = Field(
+        ...,
+        description="Current task status (PENDING, PROCESSING, SUCCESS, FAILURE)"
+    )
+    
+    progress: Optional[int] = Field(
+        None,
+        description="Task progress percentage (0-100)"
+    )
+    
+    message: Optional[str] = Field(
+        None,
+        description="Current status message"
+    )
+    
+    result: Optional[dict] = Field(
+        None,
+        description="Task result (only available when completed)"
+    )
+    
+    started_at: Optional[str] = Field(
+        None,
+        description="Task start timestamp"
+    )
+    
+    completed_at: Optional[str] = Field(
+        None,
+        description="Task completion timestamp"
+    )
+    
+    error: Optional[str] = Field(
+        None,
+        description="Error message (only if failed)"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "task_id": "abc123-def456-ghi789",
+                "status": "PROCESSING",
+                "progress": 45,
+                "message": "ML model loaded, processing texts",
+                "started_at": "2025-08-06T16:52:17.057029"
+            }
+        }
+
 class HealthResponse(BaseModel):
     """Health check response model"""
     
@@ -213,11 +306,23 @@ class HealthResponse(BaseModel):
         description="API version"
     )
     
+    redis_status: Optional[str] = Field(
+        None,
+        description="Redis connection status"
+    )
+    
+    celery_status: Optional[str] = Field(
+        None,
+        description="Celery worker status"
+    )
+    
     class Config:
         json_schema_extra = {
             "example": {
                 "status": "healthy",
                 "message": "Bangla Plagiarism Detection API is running",
-                "version": "1.0.0"
+                "version": "1.0.0",
+                "redis_status": "connected",
+                "celery_status": "active"
             }
         }
