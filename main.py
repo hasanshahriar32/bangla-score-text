@@ -122,17 +122,23 @@ async def health_check():
 @app.get("/flower")
 async def flower_dashboard():
     """Provide access to Flower monitoring dashboard"""
-    # Return an HTML page that redirects to Flower or embeds it
-    return HTMLResponse(content="""
+    # Get the current host from the request or use localhost as fallback
+    flower_url = "http://localhost:5555"
+    external_flower_url = f"{flower_url.replace('localhost', '0.0.0.0')}"
+    
+    return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Flower Dashboard - Queue Monitor</title>
         <style>
-            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
-            .header { background: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
-            iframe { width: 100%; height: 80vh; border: 1px solid #ddd; border-radius: 5px; }
-            .info { background: #e3f2fd; padding: 10px; margin-bottom: 10px; border-radius: 5px; }
+            body {{ margin: 0; padding: 20px; font-family: Arial, sans-serif; }}
+            .header {{ background: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 5px; }}
+            iframe {{ width: 100%; height: 80vh; border: 1px solid #ddd; border-radius: 5px; }}
+            .info {{ background: #e3f2fd; padding: 10px; margin-bottom: 10px; border-radius: 5px; }}
+            .error {{ background: #ffebee; color: #c62828; padding: 15px; margin: 10px 0; border-radius: 5px; }}
+            .links {{ margin: 10px 0; }}
+            .links a {{ display: inline-block; margin: 5px 10px 5px 0; padding: 8px 15px; background: #2196f3; color: white; text-decoration: none; border-radius: 3px; }}
         </style>
     </head>
     <body>
@@ -141,14 +147,39 @@ async def flower_dashboard():
             <p>Monitor Celery workers, Redis connections, and task queues</p>
         </div>
         <div class="info">
-            <strong>Direct Access:</strong> <a href="http://localhost:5555" target="_blank">http://localhost:5555</a>
+            <strong>Queue Status:</strong> Connected to Redis (103.159.37.45:8945)<br>
+            <strong>Workers:</strong> 2 concurrent workers running<br>
+            <strong>Queues:</strong> plagiarism, similarity, celery
         </div>
-        <iframe src="http://localhost:5555" frameborder="0"></iframe>
+        <div class="links">
+            <a href="{flower_url}" target="_blank">Open Flower Dashboard</a>
+            <a href="/health" target="_blank">API Health Check</a>
+            <a href="/docs" target="_blank">API Documentation</a>
+        </div>
+        <div class="error">
+            <strong>Note:</strong> If the dashboard below doesn't load, click "Open Flower Dashboard" above to access it directly.
+        </div>
+        <iframe src="{flower_url}" frameborder="0" onload="this.style.display='block'" onerror="this.style.display='none'"></iframe>
         <script>
-            // Refresh iframe every 30 seconds to keep data fresh
-            setInterval(function() {
-                document.querySelector('iframe').src = document.querySelector('iframe').src;
-            }, 30000);
+            // Try to load the iframe, fallback to external link if failed
+            const iframe = document.querySelector('iframe');
+            iframe.onload = function() {{
+                console.log('Flower dashboard loaded successfully');
+            }};
+            iframe.onerror = function() {{
+                console.log('Failed to load Flower dashboard in iframe');
+                this.style.display = 'none';
+                document.querySelector('.error').innerHTML = '<strong>Dashboard Access:</strong> Click "Open Flower Dashboard" above to view the monitoring interface.';
+            }};
+            
+            // Refresh iframe every 30 seconds
+            setInterval(function() {{
+                try {{
+                    iframe.src = iframe.src;
+                }} catch(e) {{
+                    console.log('Iframe refresh failed:', e);
+                }}
+            }}, 30000);
         </script>
     </body>
     </html>
