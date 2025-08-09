@@ -23,10 +23,18 @@ The system requires these environment variables to be configured:
 - `MAX_TEXT_LENGTH` - Maximum text length limit (default: 50000)
 
 ### Queue System Architecture
-- Redis serves as both message broker and result backend
-- Celery handles distributed task processing
-- Flower provides web-based queue monitoring
-- Tasks are routed to specialized queues (plagiarism, similarity)
+- External Redis (103.159.37.45:8945) serves as both message broker and result backend
+- Celery handles distributed task processing with 2 concurrent workers
+- Custom Flower dashboard integrated at `/flower` route (no separate port)
+- Tasks are routed to specialized queues (plagiarism, similarity, celery)
+- Real-time worker monitoring and task tracking available
+
+### Flower Dashboard Integration
+- Custom Flower dashboard runs directly on main API at `/flower` route
+- No separate port needed - all functionality accessible from port 5000
+- Features: worker status, task monitoring, broker information, queue statistics
+- Auto-refresh every 5 seconds for real-time data
+- Navigation: `/flower`, `/flower/workers`, `/flower/tasks`, `/flower/broker`
 
 ## System Architecture
 
